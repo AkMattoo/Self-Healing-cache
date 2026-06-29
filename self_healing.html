@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Healing Distributed Cache</title>
+    <style>
+        :root {
+            --bg: #0a0e1a;
+            --panel: #111827;
+            --border: #1f2937;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.3);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #e5e7eb;
+            --text-dim: #9ca3af;
+            --node-healthy: #10b981;
+            --node-failed: #ef4444;
+            --node-joining: #f59e0b;
+            --replica: #8b5cf6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.875rem;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            gap: 1.5rem;
+            padding: 1.5rem;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 1400px) {
+            .main-container {
+                grid-template-columns: 250px 1fr;
+            }
+            .right-panel {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+        }
+
+        .panel-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .panel-title::before {
+            content: '';
+            display: block;
+            width: 4px;
+            height: 16px;
+            background: var(--accent);
+            border-radius: 2px;
+        }
+
+        .control-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text);
+            border: 1px solid #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #374151;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .input-group input {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            color: var(--text);
+            font-size: 0.875rem;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+        }
+
+        /* Hash Ring Visualization */
+        .hash-ring-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            margin: 1rem 0;
+        }
+
+        .hash-ring-svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .ring-bg {
+            fill: none;
+            stroke: var(--border);
+            stroke-width: 2;
+        }
+
+        .ring-segment {
+            fill: none;
+            stroke-width: 8;
+            stroke-linecap: round;
+            transition: all 0.5s ease;
+        }
+
+        .ring-node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .ring-node:hover {
+            filter: brightness(1.3);
+        }
+
+        .ring-node-circle {
+            transition: all 0.3s ease;
+        }
+
+        .ring-label {
+            font-size: 10px;
+            fill: var(--text-dim);
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+        }
+
+        /* Node Cards */
+        .nodes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .node-card {
+            background: linear-gradient(135deg, #1f2937, #111827);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .node-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--node-healthy);
+            transition: background 0.3s;
+        }
+
+        .node-card.failed::before {
+            background: var(--node-failed);
+        }
+
+        .node-card.joining::before {
+            background: var(--node-joining);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .node-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .node-name {
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .node-status {
+            font-size: 0.625rem;
+            padding: 0.125rem 0.5rem;
+            border-radius: 999px;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        .status-healthy {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--node-healthy);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--node-failed);
+        }
+
+        .status-joining {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--node-joining);
+        }
+
+        .node-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .node-stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .node-stat-value {
+            color: var(--text);
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .node-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+
+        .node-actions button {
+            flex: 1;
+            padding: 0.375rem;
+            font-size: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-kill {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-kill:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-recover {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-recover:hover {
+            background: rgba(16, 185, 129, 0.3);
+        }
+
+        /* Log Console */
+        .log-container {
+            background: #000;
+            border-radius: 8px;
+            padding: 0.75rem;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .log-entry {
+            margin-bottom: 0.25rem;
+            padding: 0.125rem 0;
+            border-left: 2px solid transparent;
+            padding-left: 0.5rem;
+        }
+
+        .log-time {
+            color: #6b7280;
+        }
+
+        .log-info {
+            border-left-color: var(--accent);
+            color: #93c5fd;
+        }
+
+        .log-success {
+            border-left-color: var(--success);
+            color: #6ee7b7;
+        }
+
+        .log-warning {
+            border-left-color: var(--warning);
+            color: #fcd34d;
+        }
+
+        .log-error {
+            border-left-color: var(--danger);
+            color: #fca5a5;
+        }
+
+        .log-gossip {
+            border-left-color: #8b5cf6;
+            color: #c4b5fd;
+        }
+
+        /* Traffic Monitor */
+        .traffic-monitor {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .traffic-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .traffic-label {
+            width: 60px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-align: right;
+        }
+
+        .traffic-track {
+            flex: 1;
+            height: 20px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .traffic-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 0.5rem;
+            font-size: 0.625rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .traffic-fill.read {
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+        }
+
+        .traffic-fill.write {
+            background: linear-gradient(90deg, #10b981, #34d399);
+        }
+
+        .traffic-fill.failover {
+            background: linear-gradient(90deg, #f59e0b, #fbbf24);
+        }
+
+        .traffic-fill.error {
+            background: linear-gradient(90deg, #ef4444, #f87171);
+        }
+
+        /* Key Distribution */
+        .key-viz {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            margin-top: 0.5rem;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .key-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .key-dot:hover {
+            transform: scale(1.5);
+        }
+
+        /* Metrics */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .metric-card {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 0.25rem;
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-in {
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes migrate {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .migrating {
+            animation: migrate 0.5s ease;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+        }
+
+        .legend {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: #1f2937;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.75rem;
+            pointer-events: none;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .tooltip.show {
+            opacity: 1;
+        }
+
+        .replication-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.625rem;
+            color: var(--replica);
+            background: rgba(139, 92, 246, 0.1);
+            padding: 0.125rem 0.375rem;
+            border-radius: 4px;
+            margin-left: 0.5rem;
+        }
+
+        .consistency-mode {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .consistency-mode button {
+            flex: 1;
+            padding: 0.375rem;
+            font-size: 0.75rem;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text-dim);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .consistency-mode button.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🔧 Self-Healing Distributed Cache</h1>
+            <p style="color: var(--text-dim); font-size: 0.875rem; margin-top: 0.25rem;">Consistent Hashing · Gossip Protocol · Replication · Auto-Rebalance</p>
+        </div>
+        <div class="header-stats">
+            <div class="stat">
+                <span class="stat-value" id="stat-nodes">0</span>
+                <span class="stat-label">Active Nodes</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-keys">0</span>
+                <span class="stat-label">Total Keys</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-ops">0</span>
+                <span class="stat-label">Ops/Sec</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-availability">100%</span>
+                <span class="stat-label">Availability</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Left Panel: Controls -->
+        <div class="left-panel">
+            <div class="panel">
+                <div class="panel-title">Cluster Controls</div>
+
+                <div class="control-group">
+                    <label>Node Management</label>
+                    <button class="btn btn-primary" onclick="cluster.addNode()">
+                        <span>➕</span> Add Node
+                    </button>
+                    <button class="btn btn-danger" onclick="cluster.killRandomNode()">
+                        <span>💀</span> Kill Random Node
+                    </button>
+                    <button class="btn btn-warning" onclick="cluster.killPrimaryNode()">
+                        <span>⚡</span> Kill Primary (Test Failover)
+                    </button>
+                </div>
+
+                <div class="control-group">
+                    <label>Traffic Simulation</label>
+                    <button class="btn btn-secondary" id="btn-traffic" onclick="cluster.toggleTraffic()">
+                        <span>▶️</span> Start Traffic
+                    </button>
+                    <div style="margin-top: 0.5rem;">
+                        <label style="font-size: 0.75rem; color: var(--text-dim);">Intensity: <span id="traffic-intensity">50</span>%</label>
+                        <input type="range" min="10" max="100" value="50" style="width: 100%; margin-top: 0.25rem;" 
+                               oninput="cluster.setTrafficIntensity(this.value); document.getElementById('traffic-intensity').textContent = this.value;">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Consistency Mode</label>
+                    <div class="consistency-mode">
+                        <button class="active" onclick="cluster.setConsistency('eventual', this)">Eventual</button>
+                        <button onclick="cluster.setConsistency('quorum', this)">Quorum</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Manual Operations</label>
+                    <div class="input-group">
+                        <input type="text" id="manual-key" placeholder="Key" style="flex: 1;">
+                        <input type="text" id="manual-value" placeholder="Value" style="flex: 1;">
+                    </div>
+                    <div class="input-group">
+                        <input type="number" id="manual-ttl" placeholder="TTL (s)" style="flex: 1;" min="1" value="60">
+                        <button class="btn btn-primary" style="flex: 1; margin: 0;" onclick="cluster.manualSet()">SET</button>
+                    </div>
+                    <div class="input-group" style="margin-top: 0.5rem;">
+                        <input type="text" id="manual-get-key" placeholder="Key to GET" style="flex: 2;">
+                        <button class="btn btn-secondary" style="flex: 1; margin: 0;" onclick="cluster.manualGet()">GET</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Eviction Policy</label>
+                    <div class="checkbox-group">
+                        <input type="radio" name="eviction" value="none" checked onchange="cluster.setEviction('none')">
+                        <span>None</span>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="radio" name="eviction" value="lru" onchange="cluster.setEviction('lru')">
+                        <span>LRU (Least Recently Used)</span>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="radio" name="eviction" value="lfu" onchange="cluster.setEviction('lfu')">
+                        <span>LFU (Least Frequently Used)</span>
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        <label style="font-size: 0.75rem; color: var(--text-dim);">Max Keys/Node: <span id="max-keys-val">100</span></label>
+                        <input type="range" min="20" max="300" value="100" style="width: 100%; margin-top: 0.25rem;"
+                               oninput="cluster.setMaxKeys(this.value); document.getElementById('max-keys-val').textContent = this.value;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 1rem;">
+                <div class="panel-title">Cluster Metrics</div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-reads">0</div>
+                        <div class="metric-label">Reads</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-writes">0</div>
+                        <div class="metric-label">Writes</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-failovers">0</div>
+                        <div class="metric-label">Failovers</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-rebalances">0</div>
+                        <div class="metric-label">Rebalances</div>
+                    </div>
+                </div>
+                <div class="traffic-monitor">
+                    <div class="traffic-bar">
+                        <span class="traffic-label">Reads</span>
+                        <div class="traffic-track">
+                            <div class="traffic-fill read" id="traffic-read" style="width: 0%">0</div>
+                        </div>
+                    </div>
+                    <div class="traffic-bar">
+                        <span class="traffic-label">Writes</span>
+                        <div class="traffic-track">
+                            <div class="traffic-fill write" id="traffic-write" style="width: 0%">0</div>
+                        </div>
+                    </div>
+                    <div class="traffic-bar">
+                        <span class="traffic-label">Failover</span>
+                        <div class="traffic-track">
+                            <div class="traffic-fill failover" id="traffic-failover" style="width: 0%">0</div>
+                        </div>
+                    </div>
+                    <div class="traffic-bar">
+                        <span class="traffic-label">Errors</span>
+                        <div class="traffic-track">
+                            <div class="traffic-fill error" id="traffic-error" style="width: 0%">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel: Visualization -->
+        <div class="center-panel">
+            <div class="panel">
+                <div class="panel-title">Consistent Hash Ring</div>
+                <div class="hash-ring-container">
+                    <svg class="hash-ring-svg" viewBox="0 0 400 400" id="hash-ring">
+                        <!-- Ring will be rendered here -->
+                    </svg>
+                </div>
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--node-healthy);"></div>
+                        <span>Healthy</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--node-failed);"></div>
+                        <span>Failed</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--node-joining);"></div>
+                        <span>Joining</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--replica);"></div>
+                        <span>Replica</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 1rem;">
+                <div class="panel-title">Active Nodes</div>
+                <div class="nodes-grid" id="nodes-grid">
+                    <!-- Node cards rendered here -->
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 1rem;">
+                <div class="panel-title">Key Distribution</div>
+                <div class="key-viz" id="key-viz"></div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Logs -->
+        <div class="right-panel">
+            <div class="panel">
+                <div class="panel-title" style="display: flex; justify-content: space-between;">
+                    <span>Event Log</span>
+                    <button class="btn btn-secondary" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.625rem; margin: 0;" onclick="cluster.clearLogs()">Clear</button>
+                </div>
+                <div class="log-container" id="log-container">
+                    <div class="log-entry log-info">
+                        <span class="log-time">[SYSTEM]</span> Distributed Cache initialized. Ready for nodes.
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 1rem;">
+                <div class="panel-title">Recent Operations</div>
+                <div id="recent-ops" style="font-size: 0.75rem; color: var(--text-dim); max-height: 200px; overflow-y: auto;">
+                    <div style="padding: 0.5rem; text-align: center; color: var(--text-dim);">No operations yet</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // ==================== CONSISTENT HASHING ====================
+        class ConsistentHashRing {
+            constructor(replicas = 150) {
+                this.replicas = replicas;
+                this.ring = new Map(); // hash -> nodeId
+                this.nodes = new Set();
+                this.sortedKeys = [];
+            }
+
+            hash(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                return Math.abs(hash) % 360;
+            }
+
+            addNode(nodeId) {
+                if (this.nodes.has(nodeId)) return;
+                this.nodes.add(nodeId);
+                for (let i = 0; i < this.replicas; i++) {
+                    const key = this.hash(`${nodeId}:${i}`);
+                    this.ring.set(key, nodeId);
+                }
+                this.sortedKeys = Array.from(this.ring.keys()).sort((a, b) => a - b);
+            }
+
+            removeNode(nodeId) {
+                if (!this.nodes.has(nodeId)) return;
+                this.nodes.delete(nodeId);
+                for (let i = 0; i < this.replicas; i++) {
+                    const key = this.hash(`${nodeId}:${i}`);
+                    this.ring.delete(key);
+                }
+                this.sortedKeys = Array.from(this.ring.keys()).sort((a, b) => a - b);
+            }
+
+            getNode(key) {
+                if (this.sortedKeys.length === 0) return null;
+                const hash = this.hash(key) % 360;
+                let idx = this.sortedKeys.findIndex(k => k >= hash);
+                if (idx === -1) idx = 0;
+                return this.ring.get(this.sortedKeys[idx]);
+            }
+
+            getNodes(key, count = 2) {
+                if (this.sortedKeys.length === 0) return [];
+                const hash = this.hash(key) % 360;
+                let idx = this.sortedKeys.findIndex(k => k >= hash);
+                if (idx === -1) idx = 0;
+
+                const result = [];
+                const seen = new Set();
+                for (let i = 0; i < this.sortedKeys.length && result.length < count; i++) {
+                    const nodeId = this.ring.get(this.sortedKeys[(idx + i) % this.sortedKeys.length]);
+                    if (!seen.has(nodeId)) {
+                        seen.add(nodeId);
+                        result.push(nodeId);
+                    }
+                }
+                return result;
+            }
+
+            getNodeRange(nodeId) {
+                const ranges = [];
+                for (let i = 0; i < this.sortedKeys.length; i++) {
+                    if (this.ring.get(this.sortedKeys[i]) === nodeId) {
+                        const start = this.sortedKeys[i];
+                        const end = this.sortedKeys[(i + 1) % this.sortedKeys.length];
+                        ranges.push({ start, end });
+                    }
+                }
+                return ranges;
+            }
+        }
+
+        // ==================== CACHE NODE ====================
+        class CacheNode {
+            constructor(id, ring) {
+                this.id = id;
+                this.ring = ring;
+                this.data = new Map();
+                this.ttls = new Map();
+                this.accessTimes = new Map();
+                this.accessCounts = new Map();
+                this.status = 'healthy'; // healthy, failed, joining
+                this.lastHeartbeat = Date.now();
+                this.keysMigrated = 0;
+                this.keysReceived = 0;
+                this.reads = 0;
+                this.writes = 0;
+                this.memoryUsed = 0;
+                this.maxKeys = 100;
+                this.evictionPolicy = 'none';
+            }
+
+            set(key, value, ttl = 60) {
+                if (this.status === 'failed') return false;
+
+                // Eviction if needed
+                if (this.data.size >= this.maxKeys && !this.data.has(key)) {
+                    this.evict();
+                }
+
+                this.data.set(key, value);
+                this.ttls.set(key, Date.now() + ttl * 1000);
+                this.accessTimes.set(key, Date.now());
+                this.accessCounts.set(key, (this.accessCounts.get(key) || 0) + 1);
+                this.writes++;
+                return true;
+            }
+
+            get(key) {
+                if (this.status === 'failed') return null;
+                if (!this.data.has(key)) return null;
+
+                const ttl = this.ttls.get(key);
+                if (ttl && Date.now() > ttl) {
+                    this.delete(key);
+                    return null;
+                }
+
+                this.accessTimes.set(key, Date.now());
+                this.accessCounts.set(key, (this.accessCounts.get(key) || 0) + 1);
+                this.reads++;
+                return this.data.get(key);
+            }
+
+            delete(key) {
+                this.data.delete(key);
+                this.ttls.delete(key);
+                this.accessTimes.delete(key);
+                this.accessCounts.delete(key);
+            }
+
+            evict() {
+                if (this.data.size === 0) return;
+                let keyToEvict = null;
+
+                if (this.evictionPolicy === 'lru') {
+                    let oldest = Infinity;
+                    for (const [key, time] of this.accessTimes) {
+                        if (time < oldest) {
+                            oldest = time;
+                            keyToEvict = key;
+                        }
+                    }
+                } else if (this.evictionPolicy === 'lfu') {
+                    let minCount = Infinity;
+                    for (const [key, count] of this.accessCounts) {
+                        if (count < minCount) {
+                            minCount = count;
+                            keyToEvict = key;
+                        }
+                    }
+                }
+
+                if (keyToEvict) {
+                    this.delete(keyToEvict);
+                }
+            }
+
+            getKeys() {
+                return Array.from(this.data.keys());
+            }
+
+            getKeyCount() {
+                return this.data.size;
+            }
+
+            fail() {
+                this.status = 'failed';
+            }
+
+            recover() {
+                this.status = 'healthy';
+                this.lastHeartbeat = Date.now();
+            }
+
+            cleanupExpired() {
+                const now = Date.now();
+                for (const [key, ttl] of this.ttls) {
+                    if (now > ttl) {
+                        this.delete(key);
+                    }
+                }
+            }
+        }
+
+        // ==================== CLUSTER ====================
+        class DistributedCacheCluster {
+            constructor() {
+                this.ring = new ConsistentHashRing(150);
+                this.nodes = new Map();
+                this.replicationFactor = 2;
+                this.consistencyMode = 'eventual'; // eventual, quorum
+                this.trafficRunning = false;
+                this.trafficIntensity = 50;
+                this.trafficInterval = null;
+                this.gossipInterval = null;
+                this.ttlInterval = null;
+                this.metrics = {
+                    reads: 0,
+                    writes: 0,
+                    failovers: 0,
+                    rebalances: 0,
+                    errors: 0,
+                    recentOps: []
+                };
+                this.logs = [];
+                this.maxLogs = 200;
+                this.opQueue = [];
+                this.processingQueue = false;
+
+                this.init();
+            }
+
+            init() {
+                // Start with 3 nodes
+                for (let i = 0; i < 3; i++) {
+                    this.addNode();
+                }
+
+                // Start gossip protocol
+                this.gossipInterval = setInterval(() => this.gossip(), 2000);
+
+                // Start TTL cleanup
+                this.ttlInterval = setInterval(() => this.cleanupExpired(), 1000);
+
+                // Start UI update
+                setInterval(() => this.updateUI(), 100);
+
+                this.log('Cluster initialized with 3 nodes', 'info');
+            }
+
+            addNode() {
+                const id = `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                const node = new CacheNode(id, this.ring);
+                node.status = 'joining';
+                this.nodes.set(id, node);
+                this.ring.addNode(id);
+
+                this.log(`Node ${id.slice(0, 8)} joining cluster...`, 'warning');
+
+                // Simulate join delay then rebalance
+                setTimeout(() => {
+                    node.status = 'healthy';
+                    this.rebalanceKeys(id, 'join');
+                    this.log(`Node ${id.slice(0, 8)} joined and rebalanced`, 'success');
+                }, 1500);
+
+                this.updateUI();
+                return id;
+            }
+
+            killNode(nodeId) {
+                const node = this.nodes.get(nodeId);
+                if (!node || node.status === 'failed') return;
+
+                node.fail();
+                this.metrics.failovers++;
+                this.log(`Node ${nodeId.slice(0, 8)} FAILED! Initiating failover...`, 'error');
+
+                // Replicate keys from failed node to successors
+                const keys = node.getKeys();
+                let migrated = 0;
+
+                for (const key of keys) {
+                    const value = node.data.get(key);
+                    const ttl = node.ttls.get(key);
+                    const remainingTtl = ttl ? Math.max(0, (ttl - Date.now()) / 1000) : 60;
+
+                    const replicas = this.ring.getNodes(key, this.replicationFactor);
+                    for (const replicaId of replicas) {
+                        if (replicaId !== nodeId && this.nodes.has(replicaId)) {
+                            const replica = this.nodes.get(replicaId);
+                            if (replica.status === 'healthy') {
+                                replica.set(key, value, remainingTtl);
+                                migrated++;
+                            }
+                        }
+                    }
+                }
+
+                this.log(`Failover complete: ${migrated} keys migrated to replicas`, 'success');
+                this.updateUI();
+            }
+
+            killRandomNode() {
+                const healthy = Array.from(this.nodes.values()).filter(n => n.status === 'healthy');
+                if (healthy.length === 0) {
+                    this.log('No healthy nodes to kill!', 'warning');
+                    return;
+                }
+                const victim = healthy[Math.floor(Math.random() * healthy.length)];
+                this.killNode(victim.id);
+            }
+
+            killPrimaryNode() {
+                // Find node with most keys (primary workload)
+                let maxKeys = -1;
+                let primary = null;
+                for (const node of this.nodes.values()) {
+                    if (node.status === 'healthy' && node.getKeyCount() > maxKeys) {
+                        maxKeys = node.getKeyCount();
+                        primary = node;
+                    }
+                }
+                if (primary) {
+                    this.log(`Killing primary node ${primary.id.slice(0, 8)} (holding ${maxKeys} keys)`, 'warning');
+                    this.killNode(primary.id);
+                }
+            }
+
+            recoverNode(nodeId) {
+                const node = this.nodes.get(nodeId);
+                if (!node || node.status !== 'failed') return;
+
+                node.recover();
+                this.ring.addNode(nodeId);
+                this.rebalanceKeys(nodeId, 'recover');
+                this.log(`Node ${nodeId.slice(0, 8)} recovered and rejoined`, 'success');
+                this.updateUI();
+            }
+
+            rebalanceKeys(nodeId, reason) {
+                this.metrics.rebalances++;
+                const node = this.nodes.get(nodeId);
+                if (!node) return;
+
+                if (reason === 'join') {
+                    // Steal keys from other nodes that now belong to this node
+                    for (const [otherId, otherNode] of this.nodes) {
+                        if (otherId === nodeId || otherNode.status !== 'healthy') continue;
+
+                        const keys = otherNode.getKeys();
+                        for (const key of keys) {
+                            const primary = this.ring.getNode(key);
+                            if (primary === nodeId) {
+                                const value = otherNode.data.get(key);
+                                const ttl = otherNode.ttls.get(key);
+                                const remainingTtl = ttl ? Math.max(0, (ttl - Date.now()) / 1000) : 60;
+                                node.set(key, value, remainingTtl);
+                                otherNode.delete(key);
+                                node.keysReceived++;
+                            }
+                        }
+                    }
+                } else if (reason === 'recover') {
+                    // Node is back, might need to reclaim keys
+                    for (const [otherId, otherNode] of this.nodes) {
+                        if (otherId === nodeId || otherNode.status !== 'healthy') continue;
+
+                        const keys = otherNode.getKeys();
+                        for (const key of keys) {
+                            const primary = this.ring.getNode(key);
+                            if (primary === nodeId) {
+                                const value = otherNode.data.get(key);
+                                const ttl = otherNode.ttls.get(key);
+                                const remainingTtl = ttl ? Math.max(0, (ttl - Date.now()) / 1000) : 60;
+                                node.set(key, value, remainingTtl);
+                                otherNode.delete(key);
+                                node.keysReceived++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            set(key, value, ttl = 60) {
+                const nodes = this.ring.getNodes(key, this.replicationFactor);
+                let success = 0;
+                const timestamp = Date.now();
+
+                for (const nodeId of nodes) {
+                    const node = this.nodes.get(nodeId);
+                    if (node && node.status === 'healthy') {
+                        if (node.set(key, value, ttl)) {
+                            success++;
+                        }
+                    }
+                }
+
+                if (this.consistencyMode === 'quorum') {
+                    const quorum = Math.floor(this.replicationFactor / 2) + 1;
+                    if (success < quorum) {
+                        this.metrics.errors++;
+                        this.addRecentOp('SET', key, 'FAILED (quorum not met)');
+                        return false;
+                    }
+                }
+
+                if (success > 0) {
+                    this.metrics.writes++;
+                    this.addRecentOp('SET', key, `replicated to ${success} nodes`);
+                    return true;
+                }
+
+                this.metrics.errors++;
+                this.addRecentOp('SET', key, 'FAILED (no healthy nodes)');
+                return false;
+            }
+
+            get(key) {
+                const nodes = this.ring.getNodes(key, this.replicationFactor);
+                let value = null;
+                let found = false;
+
+                for (const nodeId of nodes) {
+                    const node = this.nodes.get(nodeId);
+                    if (node && node.status === 'healthy') {
+                        const result = node.get(key);
+                        if (result !== null) {
+                            value = result;
+                            found = true;
+                            if (this.consistencyMode === 'eventual') {
+                                break; // First valid response
+                            }
+                        }
+                    }
+                }
+
+                if (found) {
+                    this.metrics.reads++;
+                    this.addRecentOp('GET', key, 'success');
+                    return value;
+                }
+
+                // Try all nodes as fallback (read repair)
+                for (const [nodeId, node] of this.nodes) {
+                    if (node.status === 'healthy') {
+                        const result = node.get(key);
+                        if (result !== null) {
+                            this.metrics.reads++;
+                            this.addRecentOp('GET', key, 'success (read repair)');
+                            return result;
+                        }
+                    }
+                }
+
+                this.metrics.errors++;
+                this.addRecentOp('GET', key, 'MISS');
+                return null;
+            }
+
+            gossip() {
+                // Heartbeat and failure detection
+                const now = Date.now();
+                for (const [nodeId, node] of this.nodes) {
+                    if (node.status === 'healthy') {
+                        node.lastHeartbeat = now;
+                    } else if (node.status === 'failed') {
+                        // Check if we should auto-recover (simulated)
+                        if (Math.random() < 0.02) {
+                            this.recoverNode(nodeId);
+                        }
+                    }
+                }
+
+                // Random gossip message
+                if (Math.random() < 0.3) {
+                    const healthy = Array.from(this.nodes.values()).filter(n => n.status === 'healthy');
+                    if (healthy.length > 0) {
+                        const sender = healthy[Math.floor(Math.random() * healthy.length)];
+                        this.log(`Gossip: ${sender.id.slice(0, 8)} reports ${sender.getKeyCount()} keys, status: healthy`, 'gossip');
+                    }
+                }
+            }
+
+            cleanupExpired() {
+                for (const node of this.nodes.values()) {
+                    if (node.status === 'healthy') {
+                        node.cleanupExpired();
+                    }
+                }
+            }
+
+            // ==================== TRAFFIC SIMULATION ====================
+            toggleTraffic() {
+                this.trafficRunning = !this.trafficRunning;
+                const btn = document.getElementById('btn-traffic');
+
+                if (this.trafficRunning) {
+                    btn.innerHTML = '<span>⏸️</span> Stop Traffic';
+                    btn.classList.remove('btn-secondary');
+                    btn.classList.add('btn-danger');
+                    this.startTraffic();
+                } else {
+                    btn.innerHTML = '<span>▶️</span> Start Traffic';
+                    btn.classList.remove('btn-danger');
+                    btn.classList.add('btn-secondary');
+                    this.stopTraffic();
+                }
+            }
+
+            setTrafficIntensity(val) {
+                this.trafficIntensity = parseInt(val);
+            }
+
+            startTraffic() {
+                if (this.trafficInterval) clearInterval(this.trafficInterval);
+
+                this.trafficInterval = setInterval(() => {
+                    if (!this.trafficRunning) return;
+
+                    const ops = Math.floor(this.trafficIntensity / 10);
+                    for (let i = 0; i < ops; i++) {
+                        if (Math.random() < 0.6) {
+                            // Write
+                            const key = `key-${Math.floor(Math.random() * 200)}`;
+                            const value = `value-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                            this.set(key, value, 30 + Math.floor(Math.random() * 120));
+                        } else {
+                            // Read
+                            const key = `key-${Math.floor(Math.random() * 200)}`;
+                            this.get(key);
+                        }
+                    }
+                }, 100);
+            }
+
+            stopTraffic() {
+                if (this.trafficInterval) {
+                    clearInterval(this.trafficInterval);
+                    this.trafficInterval = null;
+                }
+            }
+
+            // ==================== MANUAL OPERATIONS ====================
+            manualSet() {
+                const key = document.getElementById('manual-key').value;
+                const value = document.getElementById('manual-value').value;
+                const ttl = parseInt(document.getElementById('manual-ttl').value) || 60;
+
+                if (!key || !value) {
+                    this.log('Please provide both key and value', 'warning');
+                    return;
+                }
+
+                const success = this.set(key, value, ttl);
+                if (success) {
+                    this.log(`Manual SET: ${key} = ${value} (TTL: ${ttl}s)`, 'success');
+                } else {
+                    this.log(`Manual SET failed: ${key}`, 'error');
+                }
+
+                document.getElementById('manual-key').value = '';
+                document.getElementById('manual-value').value = '';
+            }
+
+            manualGet() {
+                const key = document.getElementById('manual-get-key').value;
+                if (!key) {
+                    this.log('Please provide a key', 'warning');
+                    return;
+                }
+
+                const value = this.get(key);
+                if (value !== null) {
+                    this.log(`Manual GET: ${key} = ${value}`, 'success');
+                } else {
+                    this.log(`Manual GET: ${key} = NOT FOUND`, 'warning');
+                }
+
+                document.getElementById('manual-get-key').value = '';
+            }
+
+            setConsistency(mode, btn) {
+                this.consistencyMode = mode;
+                document.querySelectorAll('.consistency-mode button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.log(`Consistency mode changed to: ${mode.toUpperCase()}`, 'info');
+            }
+
+            setEviction(policy) {
+                for (const node of this.nodes.values()) {
+                    node.evictionPolicy = policy;
+                }
+                this.log(`Eviction policy set to: ${policy.toUpperCase()}`, 'info');
+            }
+
+            setMaxKeys(max) {
+                for (const node of this.nodes.values()) {
+                    node.maxKeys = parseInt(max);
+                }
+            }
+
+            // ==================== UI UPDATES ====================
+            log(message, type = 'info') {
+                const time = new Date().toLocaleTimeString();
+                const entry = { time, message, type };
+                this.logs.push(entry);
+                if (this.logs.length > this.maxLogs) this.logs.shift();
+
+                const container = document.getElementById('log-container');
+                const div = document.createElement('div');
+                div.className = `log-entry log-${type} animate-in`;
+                div.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+                container.appendChild(div);
+                container.scrollTop = container.scrollHeight;
+            }
+
+            clearLogs() {
+                this.logs = [];
+                document.getElementById('log-container').innerHTML = '';
+            }
+
+            addRecentOp(op, key, result) {
+                this.metrics.recentOps.unshift({ op, key, result, time: new Date().toLocaleTimeString() });
+                if (this.metrics.recentOps.length > 20) this.metrics.recentOps.pop();
+            }
+
+            updateUI() {
+                this.renderHashRing();
+                this.renderNodes();
+                this.renderKeyViz();
+                this.renderMetrics();
+                this.renderRecentOps();
+                this.updateHeaderStats();
+            }
+
+            renderHashRing() {
+                const svg = document.getElementById('hash-ring');
+                const cx = 200, cy = 200, r = 160;
+                let html = '';
+
+                // Background ring
+                html += `<circle cx="${cx}" cy="${cy}" r="${r}" class="ring-bg" />`;
+
+                // Render segments for each node
+                const nodeColors = {};
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+                let colorIdx = 0;
+
+                for (const [nodeId, node] of this.nodes) {
+                    if (node.status === 'failed') {
+                        nodeColors[nodeId] = '#374151';
+                    } else if (node.status === 'joining') {
+                        nodeColors[nodeId] = '#f59e0b';
+                    } else {
+                        nodeColors[nodeId] = colors[colorIdx % colors.length];
+                        colorIdx++;
+                    }
+                }
+
+                // Draw ring segments
+                if (this.ring.sortedKeys.length > 0) {
+                    const segmentArc = 360 / this.ring.sortedKeys.length;
+                    for (let i = 0; i < this.ring.sortedKeys.length; i++) {
+                        const nodeId = this.ring.ring.get(this.ring.sortedKeys[i]);
+                        const startAngle = (this.ring.sortedKeys[i] - 2) * (Math.PI / 180);
+                        const endAngle = (this.ring.sortedKeys[i] + 2) * (Math.PI / 180);
+
+                        const x1 = cx + r * Math.cos(startAngle);
+                        const y1 = cy + r * Math.sin(startAngle);
+                        const x2 = cx + r * Math.cos(endAngle);
+                        const y2 = cy + r * Math.sin(endAngle);
+
+                        const color = nodeColors[nodeId] || '#374151';
+                        html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="3" opacity="0.7" />`;
+                    }
+                }
+
+                // Draw nodes on ring
+                const healthyNodes = Array.from(this.nodes.values()).filter(n => n.status === 'healthy');
+                const angleStep = (2 * Math.PI) / Math.max(healthyNodes.length, 1);
+
+                healthyNodes.forEach((node, idx) => {
+                    const angle = idx * angleStep - Math.PI / 2;
+                    const nx = cx + (r + 25) * Math.cos(angle);
+                    const ny = cy + (r + 25) * Math.sin(angle);
+                    const color = nodeColors[node.id];
+
+                    html += `
+                        <g class="ring-node" onclick="cluster.recoverNode('${node.id}')">
+                            <circle cx="${nx}" cy="${ny}" r="12" fill="${color}" stroke="white" stroke-width="2" class="ring-node-circle"/>
+                            <text x="${nx}" y="${ny - 18}" class="ring-label">${node.id.slice(5, 11)}</text>
+                            <text x="${nx}" y="${ny + 28}" class="ring-label" style="font-size: 8px;">${node.getKeyCount()} keys</text>
+                        </g>
+                    `;
+                });
+
+                // Center info
+                html += `
+                    <text x="${cx}" y="${cy - 10}" text-anchor="middle" fill="#9ca3af" font-size="12">${this.nodes.size} Nodes</text>
+                    <text x="${cx}" y="${cy + 10}" text-anchor="middle" fill="#6b7280" font-size="10">${this.getTotalKeys()} Keys</text>
+                `;
+
+                svg.innerHTML = html;
+            }
+
+            renderNodes() {
+                const grid = document.getElementById('nodes-grid');
+                let html = '';
+
+                for (const [nodeId, node] of this.nodes) {
+                    const statusClass = node.status === 'failed' ? 'failed' : node.status === 'joining' ? 'joining' : '';
+                    const statusText = node.status === 'failed' ? 'Failed' : node.status === 'joining' ? 'Joining...' : 'Healthy';
+                    const statusBadge = node.status === 'failed' ? 'status-failed' : node.status === 'joining' ? 'status-joining' : 'status-healthy';
+
+                    html += `
+                        <div class="node-card ${statusClass} animate-in">
+                            <div class="node-header">
+                                <span class="node-name">${node.id.slice(0, 12)}</span>
+                                <span class="node-status ${statusBadge}">${statusText}</span>
+                            </div>
+                            <div class="node-stats">
+                                <div class="node-stat">
+                                    <span>Keys</span>
+                                    <span class="node-stat-value">${node.getKeyCount()}</span>
+                                </div>
+                                <div class="node-stat">
+                                    <span>Reads</span>
+                                    <span class="node-stat-value">${node.reads}</span>
+                                </div>
+                                <div class="node-stat">
+                                    <span>Writes</span>
+                                    <span class="node-stat-value">${node.writes}</span>
+                                </div>
+                                <div class="node-stat">
+                                    <span>Memory</span>
+                                    <span class="node-stat-value">${node.getKeyCount()}/${node.maxKeys}</span>
+                                </div>
+                            </div>
+                            <div class="node-actions">
+                                ${node.status === 'healthy' 
+                                    ? `<button class="btn-kill" onclick="cluster.killNode('${nodeId}')">Kill</button>`
+                                    : `<button class="btn-recover" onclick="cluster.recoverNode('${nodeId}')">Recover</button>`
+                                }
+                            </div>
+                        </div>
+                    `;
+                }
+
+                grid.innerHTML = html || '<div style="color: var(--text-dim); text-align: center; grid-column: 1/-1;">No nodes in cluster</div>';
+            }
+
+            renderKeyViz() {
+                const container = document.getElementById('key-viz');
+                let html = '';
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
+                let colorIdx = 0;
+                const nodeColorMap = {};
+
+                for (const [nodeId, node] of this.nodes) {
+                    if (node.status === 'healthy') {
+                        nodeColorMap[nodeId] = colors[colorIdx % colors.length];
+                        colorIdx++;
+                    }
+                }
+
+                // Show up to 200 key dots
+                let count = 0;
+                for (const [nodeId, node] of this.nodes) {
+                    if (node.status !== 'healthy') continue;
+                    const keys = node.getKeys();
+                    for (const key of keys.slice(0, 50)) {
+                        const color = nodeColorMap[nodeId];
+                        const isReplica = this.ring.getNode(key) !== nodeId;
+                        html += `<div class="key-dot" style="background: ${isReplica ? '#8b5cf6' : color}; opacity: ${isReplica ? 0.6 : 1};" title="${key} ${isReplica ? '(replica)' : '(primary)'}" onclick="alert('Key: ${key}\nNode: ${nodeId.slice(0, 8)}\nType: ${isReplica ? 'Replica' : 'Primary'}')"></div>`;
+                        count++;
+                        if (count >= 200) break;
+                    }
+                    if (count >= 200) break;
+                }
+
+                container.innerHTML = html || '<div style="color: var(--text-dim); padding: 1rem;">No keys to display</div>';
+            }
+
+            renderMetrics() {
+                document.getElementById('metric-reads').textContent = this.metrics.reads.toLocaleString();
+                document.getElementById('metric-writes').textContent = this.metrics.writes.toLocaleString();
+                document.getElementById('metric-failovers').textContent = this.metrics.failovers;
+                document.getElementById('metric-rebalances').textContent = this.metrics.rebalances;
+
+                // Traffic bars
+                const total = this.metrics.reads + this.metrics.writes + this.metrics.failovers + this.metrics.errors;
+                if (total > 0) {
+                    document.getElementById('traffic-read').style.width = `${(this.metrics.reads / total * 100)}%`;
+                    document.getElementById('traffic-read').textContent = this.metrics.reads;
+                    document.getElementById('traffic-write').style.width = `${(this.metrics.writes / total * 100)}%`;
+                    document.getElementById('traffic-write').textContent = this.metrics.writes;
+                    document.getElementById('traffic-failover').style.width = `${(this.metrics.failovers / total * 100)}%`;
+                    document.getElementById('traffic-failover').textContent = this.metrics.failovers;
+                    document.getElementById('traffic-error').style.width = `${(this.metrics.errors / total * 100)}%`;
+                    document.getElementById('traffic-error').textContent = this.metrics.errors;
+                }
+            }
+
+            renderRecentOps() {
+                const container = document.getElementById('recent-ops');
+                if (this.metrics.recentOps.length === 0) return;
+
+                let html = '';
+                for (const op of this.metrics.recentOps.slice(0, 10)) {
+                    const color = op.op === 'SET' ? '#10b981' : '#3b82f6';
+                    const statusColor = op.result.includes('FAILED') ? '#ef4444' : op.result.includes('repair') ? '#f59e0b' : '#9ca3af';
+                    html += `
+                        <div style="padding: 0.375rem 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                            <span>
+                                <span style="color: ${color}; font-weight: 600;">${op.op}</span>
+                                <span style="color: var(--text-dim); margin-left: 0.5rem;">${op.key}</span>
+                            </span>
+                            <span style="color: ${statusColor}; font-size: 0.625rem;">${op.result}</span>
+                        </div>
+                    `;
+                }
+                container.innerHTML = html;
+            }
+
+            updateHeaderStats() {
+                const healthy = Array.from(this.nodes.values()).filter(n => n.status === 'healthy').length;
+                document.getElementById('stat-nodes').textContent = healthy;
+                document.getElementById('stat-keys').textContent = this.getTotalKeys().toLocaleString();
+
+                const opsPerSec = this.trafficRunning ? this.trafficIntensity * 10 : 0;
+                document.getElementById('stat-ops').textContent = opsPerSec;
+
+                const total = this.metrics.reads + this.metrics.writes;
+                const availability = total > 0 ? ((total - this.metrics.errors) / total * 100).toFixed(1) : 100;
+                document.getElementById('stat-availability').textContent = `${availability}%`;
+            }
+
+            getTotalKeys() {
+                let total = 0;
+                for (const node of this.nodes.values()) {
+                    total += node.getKeyCount();
+                }
+                return total;
+            }
+        }
+
+        // Initialize
+        const cluster = new DistributedCacheCluster();
+    </script>
+</body>
+</html>
